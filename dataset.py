@@ -1,6 +1,6 @@
 import torch
 import torch.nn as mm
-from torch.utilis.data import Dataset
+from torch.utils.data import Dataset
 
 class BilingualDataset(Dataset):
     def __init__(self, ds, tokenizer_src, tokenizer_tgt, src_lang, tgt_lang, seq_len) -> None:
@@ -67,7 +67,7 @@ class BilingualDataset(Dataset):
             "encoder_input" : encoder_input, #(Seq_len)
             "decoder_input" : decoder_input, #(Seq_len)
             "encoder_mask" : (encoder_input != self.pad_token).unsqueeze(0).unsqueeze(0).int(), # (1, 1, Seq_len)
-            "decoder_mask" : (decoder_input != self.pad_token).unsqueeze(0).unsqueeze(0).int() & caual_mask(decoder_input.size(0)), # (1, 1, Seq_len)  & (1, Seq_len, Seq_len)
+            "decoder_mask" : (decoder_input != self.pad_token).unsqueeze(0).unsqueeze(0).int() & causal_mask(decoder_input.size(0)), # (1, 1, Seq_len)  & (1, Seq_len, Seq_len)
             "label" : label,#(Seq_len)
             "src_text" : src_text,
             "tgt_text" : tgt_text,

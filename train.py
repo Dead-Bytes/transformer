@@ -6,20 +6,20 @@ from models import build_transformer
 from datasets import load_dataset
 from tqdm import tqdm
 from torch.utils.tensorboard import SummaryWriter
-from tokenizer import Tokenizer
-from tokenizer.models import WordLevel
-from tokenizer.trainers import WordLevelTrainer
-from tokenizer.pre_tokenizers import Whitespace
+from tokenizers import Tokenizer
+from tokenizers.models import WordLevel
+from tokenizers.trainers import WordLevelTrainer
+from tokenizers.pre_tokenizers import Whitespace
 from config import get_config, get_weights_file_path
 from pathlib import Path
-
+import warnings
 def get_all_senetences(ds, lang):
     for item in ds:
         yield item['translation'][lang]
     
 def get_or_build_tokenizer(config, ds, lang):
 
-    tokenizer_path = Path(config['tokenizer_path'].format(lang))
+    tokenizer_path = Path(config['tokenizer_file'].format(lang))
     if not Path.exists(tokenizer_path):
         tokenizer = Tokenizer(WordLevel(unk_token = "<unk>"))
         tokenizer.pre_tokenizer = Whitespace()
@@ -114,3 +114,27 @@ def train_model(config):
             batch_iterator.set_postfix({f"loss": loss.item()})
 
             # log the tenorboard
+            writer.add_scaler(' train loss', loss.item(), global_step)
+            writer.flush()
+
+            # backpropagation
+            loss.backward()
+
+            optimizer.step()
+            optimizer.zero_grad()
+            global_step += 1
+
+        # save the model
+    model_filename = get_weights_file_path(config, epoch)
+    torch.save({
+        'epoch' : epoch,
+        'model_state_dict': model.state_dict(),
+        'optimizer_state_dict': optimizer.state_dict(),
+        'global_step': global_step
+    }, model_filename)
+
+if __name__ == '__main__':
+    warnings.filterwarnings("ignore")
+    config = get_config()
+  
+    train_model(config)

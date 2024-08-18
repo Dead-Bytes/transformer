@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import math 
 
-class InputEmbedding(nn.Modeule):
+class InputEmbedding(nn.Module):
     def __init__(self, d_model: int, vocab_size: int):
         super().__init__()
         self.d_model = d_model
@@ -181,7 +181,7 @@ class ProjectionLayer(nn.Module):
         # (atch, eq_Len, d_model) --> (batch, seq_len, vocab_size)
         return torch.log_softmax(self.proj(x), dim = -1)
     
-class Transformer(nn.module):
+class Transformer(nn.Module):
 
     def __init__(self, encoder : Encoder, decoder : Decoder, src_embed : InputEmbedding, tgt_embed : InputEmbedding, src_pos : PositionalEncoding, tgt_pos : PositionalEncoding, projection_layer : ProjectionLayer) -> None:
         super().__init__()
