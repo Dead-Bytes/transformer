@@ -2,7 +2,7 @@ import torch
 from torch.utils.data import random_split, Dataset, DataLoader
 import torch.nn as nn
 from dataset import BilingualDataset, causal_mask
-from models import build_transformer
+from model import build_transformer
 from datasets import load_dataset
 from tqdm import tqdm
 from torch.utils.tensorboard import SummaryWriter
@@ -13,6 +13,77 @@ from tokenizers.pre_tokenizers import Whitespace
 from config import get_config, get_weights_file_path
 from pathlib import Path
 import warnings
+
+
+def greedy_decode(model, source, source_mask, tokenizer_src, tokenizer_tgt, max_len, device):
+    sos_idx = tokenizer_tgt.token_to_id('[SOS]')
+    eos_idx = tokenizer_tgt.token_to_id('[EOS]')
+
+    # Precompute the encoder output and reuse it for every step
+    encoder_output = model.encode(source, source_mask)
+    # Initialize the decoder input with the sos token
+    decoder_input = torch.empty(1, 1).fill_(sos_idx).type_as(source).to(device)
+    while True:
+        if decoder_input.size(1) == max_len:
+            break
+
+        # build mask for target
+        decoder_mask = causal_mask(decoder_input.size(1)).type_as(source_mask).to(device)
+
+        # calculate output
+        out = model.decode(encoder_output, source_mask, decoder_input, decoder_mask)
+
+        # get next token
+        prob = model.project(out[:, -1])
+        _, next_word = torch.max(prob, dim=1)
+        decoder_input = torch.cat(
+            [decoder_input, torch.empty(1, 1).type_as(source).fill_(next_word.item()).to(device)], dim=1
+        )
+
+        if next_word == eos_idx:
+            break
+
+    return decoder_input.squeeze(0)
+
+def run_validation(model, validation_ds, src_tokenizer, tgt_tokenizer, max_len, device, print_msg, global_state, writer, num_examples=2):
+    model.eval()
+    count = 0
+    source_texts = []
+    expected = []
+    predicted = []
+
+    #size of the control window
+
+    console_width = 80
+
+    with torch.no_grad():
+        for batch in validation_ds:
+            count+=1
+            encoder_input = batch['encoder_input'].to(device)
+            encoder_mask = batch['encoder_mask'].to(device)
+
+            assert encoder_input.size(0) == 1, "Batch size should be 1 for validation"
+            model_out = greedy_decode(model, encoder_input, encoder_mask, src_tokenizer, tgt_tokenizer, max_len, device)
+            source_text = batch['src_text'][0]
+            target_text = batch['tgt_text'][0]
+            model_out_text = tgt_tokenizer.decode(model_out.detach().cpu().numpy())
+
+            source_texts.append(source_text)
+            expected.append(target_text)
+            predicted.append(model_out_text)
+
+            print_msg('-'*console_width)
+            print_msg(f"Source: {source_text}")
+            print_msg(f"Expected: {target_text}")
+            print_msg(f"Predicted: {model_out_text}")
+
+            if count >= num_examples:
+                break
+
+    if writer:
+        # Torch Metrics , charError Rate, BLEU Score, word ERror rate
+        pass
+
 def get_all_senetences(ds, lang):
     for item in ds:
         yield item['translation'][lang]
@@ -48,7 +119,7 @@ def get_ds(config):
     max_len_src = 0
     max_len_tgt = 0
 
-    for item in train_ds:
+    for item in ds_row:
         src_ids = src_tokenizer.encode(item['translation'][config['src_lang']]).ids
         tgt_ids = tgt_tokenizer.encode(item['translation'][config['tgt_lang']]).ids
         max_len_src = max(max_len_src, len(src_ids))
@@ -94,9 +165,9 @@ def train_model(config):
     loss_fn = nn.CrossEntropyLoss(ignore_index=src_tokenizer.token_to_id("[PAD]"), label_smoothing= 0.1).to(device)
 
     for epoch in range(initial_epoch, config['num_epochs']):
-        model.train()
         batch_iterator = tqdm(train_dataloader, desc = f"processing epoch {epoch}", total = len(train_dataloader))
         for batch in batch_iterator:
+            model.train()
 
             encoder_input = batch['encoder_input'].to(device)
             decoder_input = batch['decoder_input'].to(device)
@@ -114,7 +185,7 @@ def train_model(config):
             batch_iterator.set_postfix({f"loss": loss.item()})
 
             # log the tenorboard
-            writer.add_scaler(' train loss', loss.item(), global_step)
+            writer.add_scalar(' train loss', loss.item(), global_step)
             writer.flush()
 
             # backpropagation
@@ -122,6 +193,10 @@ def train_model(config):
 
             optimizer.step()
             optimizer.zero_grad()
+            # def run_validation(model, validation_ds, src_tokenizer, tgt_tokenizer, max_len, device, print_msg, global_state, writer, num_examples=2):
+
+            run_validation(model, val_dataloader, src_tokenizer, tgt_tokenizer, config['seq_len'], device, lambda msg: batch_iterator.write(msg), global_step, writer, num_examples=2)
+
             global_step += 1
 
         # save the model
