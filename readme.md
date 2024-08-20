@@ -1,1 +1,1 @@
-This Repository contains scratch build for transformer
+Attention is all you need paper implementation.
