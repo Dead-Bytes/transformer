@@ -166,6 +166,7 @@ def train_model(config):
 
     for epoch in range(initial_epoch, config['num_epochs']):
         batch_iterator = tqdm(train_dataloader, desc = f"processing epoch {epoch}", total = len(train_dataloader))
+        step_count = 0
         for batch in batch_iterator:
             model.train()
 
@@ -194,9 +195,10 @@ def train_model(config):
             optimizer.step()
             optimizer.zero_grad()
             # def run_validation(model, validation_ds, src_tokenizer, tgt_tokenizer, max_len, device, print_msg, global_state, writer, num_examples=2):
-
-            run_validation(model, val_dataloader, src_tokenizer, tgt_tokenizer, config['seq_len'], device, lambda msg: batch_iterator.write(msg), global_step, writer, num_examples=2)
-
+            # run validation after every 2 epochs
+            if step_count % 50 == 0:
+                run_validation(model, val_dataloader, src_tokenizer, tgt_tokenizer, config['seq_len'], device, lambda msg: batch_iterator.write(msg), global_step, writer, num_examples=2)
+            step_count+=1
             global_step += 1
 
         # save the model
